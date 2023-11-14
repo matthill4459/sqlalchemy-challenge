@@ -1,96 +1,169 @@
-# Import the dependencies.
-from flask import Flask, jsonify
-import datetime as dt
 
+#################################################
+# Database Setup
+import numpy as np
+
+import sqlalchemy
+from sqlalchemy.ext.automap import automap_base
+from sqlalchemy.orm import Session
+from sqlalchemy import create_engine, func
+from flask import Flask, jsonify, request
+import datetime as dt
 app = Flask(__name__)
+#################################################
+# Create SQLAlchemy engine
+engine = create_engine("sqlite:///Resources/hawaii.sqlite")
+
+    # reflect the tables
+Base = automap_base()
+Base.prepare(engine, reflect=True)
+
+# Save references to each table
+Measurement = Base.classes.measurement
+Station = Base.classes.station
+
+# Create our session (link) from Python to the DB
+session = Session(engine)
+
+#################################################
+# Flask Setup
+#################################################
+app = Flask(__name__)
+
+#################################################
+# Flask Routes
+#################################################
 
 # Define the home route
 @app.route("/")
 def home():
     return (
-        f"Welcome to the Climate App!<br/><br/>"
-        f"Available Routes:<br/>"
-        f"/api/v1.0/precipitation<br/>"
-        f"/api/v1.0/stations<br/>"
-        f"/api/v1.0/tobs<br/>"
-        f"/api/v1.0/start_date<br/>"
-        f"/api/v1.0/start_date/end_date"
+        "Welcome to the Climate App!<br/><br/>"
+        "Available Routes:<br/>"
+        "/api/v1.0/precipitation<br/>"
+        "/api/v1.0/stations<br/>"
+        "/api/v1.0/tobs<br/>"
+        "/api/v1.0/start_date<br/>"
+        "/api/v1.0/start_date/end_date"
     )
 
-# Define the precipitation route
+# Define the /api/v1.0/precipitation route
 @app.route("/api/v1.0/precipitation")
 def precipitation():
-    # Perform your precipitation query here and jsonify the result
-    # Example: results = session.query(Measurement.date, Measurement.prcp).all()
+        # Calculate the date one year ago from the most recent date
+    most_recent_date = session.query(func.max(Measurement.date)).scalar()
+    one_year_ago = (dt.datetime.strptime(most_recent_date, '%Y-%m-%d') - dt.timedelta(days=365)).strftime('%Y-%m-%d')
+
+    # Perform precipitation query for the last 12 months
+    results = session.query(Measurement.date, Measurement.prcp)\
+        .filter(Measurement.date >= one_year_ago)\
+        .filter(Measurement.date <= most_recent_date)\
+        .all()
+
     # Convert the results to a dictionary
-    # Return the JSON representation of your dictionary
-    return jsonify(results_dict)
+    precipitation_data = {date: prcp for date, prcp in results}
 
-# Define the stations route
+    # Return the JSON representation of the precipitation data
+    return jsonify(precipitation_data)
+
+# Define the /api/v1.0/stations route
 @app.route("/api/v1.0/stations")
-def stations():
-    # Perform your stations query here and jsonify the result
-    # Example: results = session.query(Station.station).all()
-    # Convert the results to a list
-    # Return the JSON representation of your list
-    return jsonify(results_list)
+def starions():
+    results = session.query(Station.station).all()
 
-# Define the temperature observation route
+    #convert to a list
+    station_list = [station[0] for station in results]
+
+    #JSON representation as list
+    return jsonify(station_list)
+
+# Define the /api/v1.0/tobs route
 @app.route("/api/v1.0/tobs")
 def tobs():
-    # Perform your temperature observation query here and jsonify the result
-    # Example: results = session.query(Measurement.date, Measurement.tobs).filter(Measurement.station == most_active_station).all()
-    # Convert the results to a list
-    # Return the JSON representation of your list
-    return jsonify(results_list)
+        # Find the most active station
+    most_active_station = session.query(Measurement.station, func.count(Measurement.station))\
+        .group_by(Measurement.station)\
+        .order_by(func.count(Measurement.station).desc())\
+        .first()[0]
+    
+    # grab data 1 year from most recent date
+    most_recent_date = session.query(func.max(Measurement.date)).scalar()
+    one_year_ago = (dt.datetime.strptime(most_recent_date, '%Y-%m-%d') - dt.timedelta(days=365)).strftime('%Y-%m-%d')
 
-# Define the start date route
-@app.route("/api/v1.0/<start_date>")
-def start_date(start_date):
-    # Perform your query for statistics using the start_date and jsonify the result
-    # Example: results = session.query(func.min(Measurement.tobs), func.max(Measurement.tobs), func.avg(Measurement.tobs)).filter(Measurement.date >= start_date).all()
-    # Convert the results to a dictionary
-    # Return the JSON representation of your dictionary
-    return jsonify(results_dict)
+    #temp query for last 12 months
+    results = session.query(Measurement.date, Measurement.tobs)\
+        .filter(Measurement.station == most_active_station)\
+        .filter(Measurement.date >= one_year_ago)\
+        .filter(Measurement.date <= most_recent_date)\
+        .all()
+    
+    #convert to list of dict
+    tobs_list = [{"Date": date, "Temperature": tobs} for date, tobs in results]
 
-# Define the start date and end date route
-@app.route("/api/v1.0/<start_date>/<end_date>")
-def start_end_date(start_date, end_date):
-    # Perform your query for statistics using both start_date and end_date and jsonify the result
-    # Example: results = session.query(func.min(Measurement.tobs), func.max(Measurement.tobs), func.avg(Measurement.tobs)).filter(Measurement.date >= start_date).filter(Measurement.date <= end_date).all()
-    # Convert the results to a dictionary
-    # Return the JSON representation of your dictionary
-    return jsonify(results_dict)
+    # jsonify it
+    return jsonify(tobs_list)
+
+# Define the start_date route with a default start date
+@app.route("/api/v1.0/start_date")
+def start_date():
+    start_date = request.args.get("start", "2010-01-01")
+
+    try:
+        # Perform query for statistics using the start_date
+        results = session.query(func.min(Measurement.tobs), func.avg(Measurement.tobs), func.max(Measurement.tobs))\
+            .filter(Measurement.date >= start_date)\
+            .all()
+
+        # Check if results contain any values
+        if results and results[0][0] is not None and results[0][1] is not None and results[0][2] is not None:
+            # Convert the results to a dictionary
+            stats_dict = {
+                "Start Date": start_date,
+                "Minimum Temperature": float(results[0][0]),
+                "Average Temperature": float(results[0][1]),
+                "Maximum Temperature": float(results[0][2])
+            }
+        else:
+            stats_dict = {"message": "No data available for the specified date range."}
+
+        # Return the JSON representation of the statistics with indentation for better readability
+        return jsonify(stats_dict), 200, {'Content-Type': 'application/json; charset=utf-8'}
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# Define the start_date/end_date route
+@app.route("/api/v1.0/start_date/end_date")
+def start_date_end_date():
+    start_date = request.args.get("start", "2010-01-01")
+    end_date = request.args.get("end", "2017-08-23")
+
+    try:
+        # Perform query for statistics using the start_date and end_date
+        results = session.query(func.min(Measurement.tobs), func.avg(Measurement.tobs), func.max(Measurement.tobs))\
+            .filter(Measurement.date >= start_date)\
+            .filter(Measurement.date <= end_date)\
+            .all()
+
+        # Check if results contain any values
+        if results and results[0][0] is not None and results[0][1] is not None and results[0][2] is not None:
+            # Convert the results to a dictionary
+            stats_dict = {
+                "Start Date": start_date,
+                "End Date": end_date,
+                "Minimum Temperature": float(results[0][0]),
+                "Average Temperature": float(results[0][1]),
+                "Maximum Temperature": float(results[0][2])
+            }
+        else:
+            stats_dict = {"message": "No data available for the specified date range."}
+
+        # Return the JSON representation of the statistics with indentation for better readability
+        return jsonify(stats_dict), 200, {'Content-Type': 'application/json; charset=utf-8'}
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 # Run the app
 if __name__ == "__main__":
     app.run(debug=True)
-
-
-
-#################################################
-# Database Setup
-#################################################
-
-
-# reflect an existing database into a new model
-
-# reflect the tables
-
-
-# Save references to each table
-
-
-# Create our session (link) from Python to the DB
-
-
-#################################################
-# Flask Setup
-#################################################
-
-
-
-
-#################################################
-# Flask Routes
-#################################################
