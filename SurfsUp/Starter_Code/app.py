@@ -1,20 +1,20 @@
-
-#################################################
-# Database Setup
+#Imports
 import numpy as np
-
 import sqlalchemy
 from sqlalchemy.ext.automap import automap_base
 from sqlalchemy.orm import Session
 from sqlalchemy import create_engine, func
 from flask import Flask, jsonify, request
 import datetime as dt
+
+
+# Create Flask app
 app = Flask(__name__)
-#################################################
+
 # Create SQLAlchemy engine
 engine = create_engine("sqlite:///Resources/hawaii.sqlite")
 
-    # reflect the tables
+# Reflect the tables
 Base = automap_base()
 Base.prepare(engine, reflect=True)
 
@@ -22,19 +22,10 @@ Base.prepare(engine, reflect=True)
 Measurement = Base.classes.measurement
 Station = Base.classes.station
 
-# Create our session (link) from Python to the DB
+# Create SQLAlchemy session
 session = Session(engine)
 
-#################################################
-# Flask Setup
-#################################################
-app = Flask(__name__)
-
-#################################################
-# Flask Routes
-#################################################
-
-# Define the home route
+# Home route
 @app.route("/")
 def home():
     return (
@@ -47,7 +38,7 @@ def home():
         "/api/v1.0/start_date/end_date"
     )
 
-# Define the /api/v1.0/precipitation route
+# Precipitation route
 @app.route("/api/v1.0/precipitation")
 def precipitation():
         # Calculate the date one year ago from the most recent date
@@ -66,7 +57,7 @@ def precipitation():
     # Return the JSON representation of the precipitation data
     return jsonify(precipitation_data)
 
-# Define the /api/v1.0/stations route
+# Stations route
 @app.route("/api/v1.0/stations")
 def starions():
     results = session.query(Station.station).all()
@@ -77,7 +68,7 @@ def starions():
     #JSON representation as list
     return jsonify(station_list)
 
-# Define the /api/v1.0/tobs route
+# Tobs route
 @app.route("/api/v1.0/tobs")
 def tobs():
         # Find the most active station
@@ -103,7 +94,8 @@ def tobs():
     # jsonify it
     return jsonify(tobs_list)
 
-# Define the start_date route with a default start date
+
+# Start date route
 @app.route("/api/v1.0/start_date")
 def start_date():
     start_date = request.args.get("start", "2010-01-01")
@@ -132,7 +124,7 @@ def start_date():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# Define the start_date/end_date route
+# Start date/end date route
 @app.route("/api/v1.0/start_date/end_date")
 def start_date_end_date():
     start_date = request.args.get("start", "2010-01-01")
